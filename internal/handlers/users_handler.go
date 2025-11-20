@@ -15,7 +15,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-
 func UsersHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/users" || r.URL.Path == "/users/" {
 		fmt.Println("ALL USERS")
@@ -26,7 +25,8 @@ func UsersHandler(w http.ResponseWriter, r *http.Request) {
 			// note: why uuid.Nil?
 			CreateNewUser(w, r, uuid.Nil)
 		default:
-			http.Error(w, "Method"+ r.Method + "is not allowed.", http.StatusNotFound)
+			w.Header().Set("Content-Type", "application/json")
+			JSONError(w, "Method"+ r.Method + "is not allowed.", http.StatusNotFound)
 			return
 		}
 	}
@@ -34,19 +34,24 @@ func UsersHandler(w http.ResponseWriter, r *http.Request) {
 
 // GET "/users"
 func GetAllUsers(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+
 	data, err := json.Marshal(global.Users)
 	if err != nil {
-		http.Error(w, "Error couldn't parse users", http.StatusInternalServerError)
+		JSONError(w, "Error couldn't parse users", http.StatusInternalServerError)
 		return
 	}
+	
 	fmt.Fprint(w, string(data))
 }
 
 // POST "/users"
 func CreateNewUser(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
+	w.Header().Set("Content-Type", "application/json")
+
 	user, httpErr := GetUserDataFromForm(r, id)
 	if httpErr != nil {
-		http.Error(w, httpErr.Message, httpErr.Code)
+		JSONError(w, httpErr.Message, httpErr.Code)
 		return
 	}
 	user.Id = uuid.New()
@@ -55,7 +60,7 @@ func CreateNewUser(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
 
 	data, err := json.Marshal(user)
 	if err != nil {
-		http.Error(w, "Error couldn't parse user", http.StatusInternalServerError)
+		JSONError(w, "Error couldn't parse user", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
@@ -64,6 +69,8 @@ func CreateNewUser(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
 
 // GET "/users/id"
 func UsersHandlerByID(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	parsedURL := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	fmt.Println(parsedURL, len(parsedURL))
 
@@ -74,12 +81,12 @@ func UsersHandlerByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(parsedURL) < 2 || len(parsedURL) > 2 {
-		http.Error(w, "Unknown route", http.StatusBadRequest)
+		JSONError(w, "Unknown route", http.StatusBadRequest)
 		return
 	}
 	id, err := uuid.Parse(parsedURL[1])
 	if err != nil {
-		http.Error(w, "Invalid user ID format", http.StatusBadRequest)
+		JSONError(w, "Invalid user ID format", http.StatusBadRequest)
 		return
 	}
 
@@ -91,15 +98,17 @@ func UsersHandlerByID(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		UpdateUserData(w,r,id)
 	default:
-		http.Error(w, "Unknown method.", http.StatusNotFound)
+		JSONError(w, "Unknown method.", http.StatusNotFound)
 		return
 	}
 }
 // PUT "/users/id"
 func UpdateUserData(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
+		w.Header().Set("Content-Type", "application/json")
+
 		user, httpErr := GetUserDataFromForm(r, id)
 		if httpErr != nil {
-			http.Error(w, httpErr.Message, httpErr.Code)
+			JSONError(w, httpErr.Message, httpErr.Code)
 			return
 		}
 
@@ -110,18 +119,20 @@ func UpdateUserData(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
 				global.Users[idx].Password_hash = user.Password_hash
 				data, err := json.Marshal(global.Users[idx])
 				if err != nil {
-					http.Error(w, "Error couldn't parse user", http.StatusInternalServerError)
+					JSONError(w, "Error couldn't parse user", http.StatusInternalServerError)
 					return
 				}
 				fmt.Fprint(w, string(data))
 				return
 			}
 		}
-		http.Error(w, "User not found", http.StatusNotFound)
+		JSONError(w, "User not found", http.StatusNotFound)
 }
 
 // GET "/users/id"
 func GetUserByID(w http.ResponseWriter, id uuid.UUID) {
+	w.Header().Set("Content-Type", "application/json")
+
 	fmt.Println("ID GET", id)
 	// handle GET logic
 	var foundUser *user.User
@@ -133,13 +144,13 @@ func GetUserByID(w http.ResponseWriter, id uuid.UUID) {
 	}
 
 	if foundUser == nil {
-		http.Error(w, "User not found", http.StatusNotFound)
+		JSONError(w, "User not found", http.StatusNotFound)
 		return
 	}
 
 	data, err := json.Marshal(foundUser)
 	if err != nil {
-		http.Error(w, "Error couldn't parse user", http.StatusInternalServerError)
+		JSONError(w, "Error couldn't parse user", http.StatusInternalServerError)
 		return
 	}
 	fmt.Fprint(w, string(data))
@@ -155,7 +166,8 @@ func DeleteUser(w http.ResponseWriter, id uuid.UUID) {
 		}
 	}
 
-	http.Error(w, "User not found", http.StatusNotFound)
+	w.Header().Set("Content-Type", "application/json")
+	JSONError(w, "User not found", http.StatusNotFound)
 }
 
 func GetUserDataFromForm(r *http.Request, id uuid.UUID) (user.User, *httperror.HttpError) {
@@ -195,4 +207,25 @@ func GetUserDataFromForm(r *http.Request, id uuid.UUID) (user.User, *httperror.H
 	user := user.User{Name: name, Email: email, Password_hash: string(hashed_password)}
 	fmt.Println("Get user", user)
 	return user, nil
+}
+
+func JSONError(w http.ResponseWriter, message string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+
+	errorResponse := struct {
+		Error string `json:"error"`
+		Code int `json:"code"`
+		Status string `json:"status"`
+	} {
+		message,
+		code,
+		http.StatusText(code),
+	}
+
+	err := json.NewEncoder(w).Encode(errorResponse)
+	
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
 }
