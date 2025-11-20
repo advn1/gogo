@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/advn1/backend/global"
+	"github.com/advn1/backend/internal/jsonutil"
 	httperror "github.com/advn1/backend/internal/models/http_error"
 	"github.com/advn1/backend/internal/models/user"
 	"github.com/google/uuid"
@@ -16,19 +17,17 @@ import (
 )
 
 func UsersHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/users" || r.URL.Path == "/users/" {
-		fmt.Println("ALL USERS")
-		switch r.Method {
-		case http.MethodGet:
-			GetAllUsers(w)
-		case http.MethodPost:
-			// note: why uuid.Nil?
-			CreateNewUser(w, r, uuid.Nil)
-		default:
-			w.Header().Set("Content-Type", "application/json")
-			JSONError(w, "Method"+ r.Method + "is not allowed.", http.StatusNotFound)
-			return
-		}
+	fmt.Println("ALL USERS")
+	switch r.Method {
+	case http.MethodGet:
+		GetAllUsers(w)
+	case http.MethodPost:
+		// note: why uuid.Nil?
+		CreateNewUser(w, r, uuid.Nil)
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		jsonutil.JSONError(w, "Method"+ r.Method + "is not allowed.", http.StatusNotFound)
+		return
 	}
 }
 
@@ -38,7 +37,7 @@ func GetAllUsers(w http.ResponseWriter) {
 
 	data, err := json.Marshal(global.Users)
 	if err != nil {
-		JSONError(w, "Error couldn't parse users", http.StatusInternalServerError)
+		jsonutil.JSONError(w, "Error couldn't parse users", http.StatusInternalServerError)
 		return
 	}
 	
@@ -51,7 +50,7 @@ func CreateNewUser(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
 
 	user, httpErr := GetUserDataFromForm(r, id)
 	if httpErr != nil {
-		JSONError(w, httpErr.Message, httpErr.Code)
+		jsonutil.JSONError(w, httpErr.Message, httpErr.Code)
 		return
 	}
 	user.Id = uuid.New()
@@ -60,7 +59,7 @@ func CreateNewUser(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
 
 	data, err := json.Marshal(user)
 	if err != nil {
-		JSONError(w, "Error couldn't parse user", http.StatusInternalServerError)
+		jsonutil.JSONError(w, "Error couldn't parse user", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
@@ -81,12 +80,12 @@ func UsersHandlerByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(parsedURL) < 2 || len(parsedURL) > 2 {
-		JSONError(w, "Unknown route", http.StatusBadRequest)
+		jsonutil.JSONError(w, "Unknown route", http.StatusBadRequest)
 		return
 	}
 	id, err := uuid.Parse(parsedURL[1])
 	if err != nil {
-		JSONError(w, "Invalid user ID format", http.StatusBadRequest)
+		jsonutil.JSONError(w, "Invalid user ID format", http.StatusBadRequest)
 		return
 	}
 
@@ -98,7 +97,7 @@ func UsersHandlerByID(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		UpdateUserData(w,r,id)
 	default:
-		JSONError(w, "Unknown method.", http.StatusNotFound)
+		jsonutil.JSONError(w, "Unknown method.", http.StatusNotFound)
 		return
 	}
 }
@@ -108,7 +107,7 @@ func UpdateUserData(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
 
 		user, httpErr := GetUserDataFromForm(r, id)
 		if httpErr != nil {
-			JSONError(w, httpErr.Message, httpErr.Code)
+			jsonutil.JSONError(w, httpErr.Message, httpErr.Code)
 			return
 		}
 
@@ -119,14 +118,14 @@ func UpdateUserData(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
 				global.Users[idx].Password_hash = user.Password_hash
 				data, err := json.Marshal(global.Users[idx])
 				if err != nil {
-					JSONError(w, "Error couldn't parse user", http.StatusInternalServerError)
+					jsonutil.JSONError(w, "Error couldn't parse user", http.StatusInternalServerError)
 					return
 				}
 				fmt.Fprint(w, string(data))
 				return
 			}
 		}
-		JSONError(w, "User not found", http.StatusNotFound)
+		jsonutil.JSONError(w, "User not found", http.StatusNotFound)
 }
 
 // GET "/users/id"
@@ -144,13 +143,13 @@ func GetUserByID(w http.ResponseWriter, id uuid.UUID) {
 	}
 
 	if foundUser == nil {
-		JSONError(w, "User not found", http.StatusNotFound)
+		jsonutil.JSONError(w, "User not found", http.StatusNotFound)
 		return
 	}
 
 	data, err := json.Marshal(foundUser)
 	if err != nil {
-		JSONError(w, "Error couldn't parse user", http.StatusInternalServerError)
+		jsonutil.JSONError(w, "Error couldn't parse user", http.StatusInternalServerError)
 		return
 	}
 	fmt.Fprint(w, string(data))
@@ -167,7 +166,7 @@ func DeleteUser(w http.ResponseWriter, id uuid.UUID) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	JSONError(w, "User not found", http.StatusNotFound)
+	jsonutil.JSONError(w, "User not found", http.StatusNotFound)
 }
 
 func GetUserDataFromForm(r *http.Request, id uuid.UUID) (user.User, *httperror.HttpError) {
@@ -207,25 +206,4 @@ func GetUserDataFromForm(r *http.Request, id uuid.UUID) (user.User, *httperror.H
 	user := user.User{Name: name, Email: email, Password_hash: string(hashed_password)}
 	fmt.Println("Get user", user)
 	return user, nil
-}
-
-func JSONError(w http.ResponseWriter, message string, code int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-
-	errorResponse := struct {
-		Error string `json:"error"`
-		Code int `json:"code"`
-		Status string `json:"status"`
-	} {
-		message,
-		code,
-		http.StatusText(code),
-	}
-
-	err := json.NewEncoder(w).Encode(errorResponse)
-	
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-	}
 }
