@@ -11,6 +11,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// User scheme for in-database model
 type User struct {
 	Name          string    `json:"name"`
 	Email         string    `json:"email"`
@@ -18,20 +19,26 @@ type User struct {
 	Id            uuid.UUID `json:"id"`
 }
 
+// Custom Http Error
 type HttpError struct {
 	Message string
 	Code    int
 }
 
+// Formatting Http Error
 func (e *HttpError) Error() string {
 	return fmt.Sprintf("%s Code: %d", e.Message, e.Code)
 }
 
+// initial database
 var users []User = make([]User, 0)
 
+// enable cors on every request
 func enableCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
@@ -61,26 +68,29 @@ func main() {
 	}
 }
 
+// "/" handler
 func rootHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "Text")
 }
 
+// "/users" handler 
 func usersHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-type", "application/json")
 	if r.URL.Path == "/users" || r.URL.Path == "/users/" {
 		fmt.Println("ALL USERS")
 		switch r.Method {
 		case http.MethodGet:
 			getAllUsers(w)
 		case http.MethodPost:
+			// note: why uuid.Nil?
 			createNewUser(w, r, uuid.Nil)
 		default:
-			http.Error(w, "Unknown method.", http.StatusNotFound)
+			http.Error(w, "Method"+ r.Method + "is not allowed.", http.StatusNotFound)
 			return
 		}
 	}
 }
 
+// GET "/users"
 func getAllUsers(w http.ResponseWriter) {
 	data, err := json.Marshal(users)
 	if err != nil {
@@ -90,6 +100,7 @@ func getAllUsers(w http.ResponseWriter) {
 	fmt.Fprint(w, string(data))
 }
 
+// POST "/users"
 func createNewUser(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
 	user, httpErr := getUserDataFromForm(r, id)
 	if httpErr != nil {
@@ -109,13 +120,17 @@ func createNewUser(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
 	fmt.Fprint(w, string(data))
 }
 
+// GET "/users/id"
 func usersHandlerByID(w http.ResponseWriter, r *http.Request) {
 	parsedURL := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	fmt.Println(parsedURL, len(parsedURL))
+
+	// if url path doesn't contain user id
 	if r.URL.Path == "/users/" {
 		usersHandler(w, r)
 		return
 	}
+
 	if len(parsedURL) < 2 || len(parsedURL) > 2 {
 		http.Error(w, "Unknown route", http.StatusBadRequest)
 		return
@@ -132,11 +147,20 @@ func usersHandlerByID(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		deleteUser(w, id)
 	case http.MethodPut:
+		updateUserData(w,r,id)
+	default:
+		http.Error(w, "Unknown method.", http.StatusNotFound)
+		return
+	}
+}
+// PUT "/users/id"
+func updateUserData(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
 		user, httpErr := getUserDataFromForm(r, id)
 		if httpErr != nil {
 			http.Error(w, httpErr.Message, httpErr.Code)
 			return
 		}
+
 		for idx, usr := range users {
 			if usr.Id == id {
 				users[idx].Name = user.Name
@@ -152,15 +176,11 @@ func usersHandlerByID(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		http.Error(w, "User not found", http.StatusNotFound)
-	default:
-		http.Error(w, "Unknown method.", http.StatusNotFound)
-		return
-	}
 }
 
+// GET "/users/id"
 func getUserByID(w http.ResponseWriter, id uuid.UUID) {
 	fmt.Println("ID GET", id)
-	w.Header().Set("Content-type", "application/json")
 	// handle GET logic
 	var foundUser *User
 	for _, user := range users {
@@ -183,9 +203,8 @@ func getUserByID(w http.ResponseWriter, id uuid.UUID) {
 	fmt.Fprint(w, string(data))
 }
 
+// DELETE "/users/id"
 func deleteUser(w http.ResponseWriter, id uuid.UUID) {
-	w.Header().Set("Content-Type", "application/json")
-
 	for i, user := range users {
 		if user.Id == id {
 			users = append(users[:i], users[i+1:]...)
@@ -197,8 +216,8 @@ func deleteUser(w http.ResponseWriter, id uuid.UUID) {
 	http.Error(w, "User not found", http.StatusNotFound)
 }
 
+// fetch user data from form by id
 func getUserDataFromForm(r *http.Request, id uuid.UUID) (User, *HttpError) {
-
 	err := r.ParseForm()
 	if err != nil {
 		return User{}, &HttpError{Message: "Error parsing form data", Code: http.StatusBadRequest}
@@ -216,7 +235,6 @@ func getUserDataFromForm(r *http.Request, id uuid.UUID) (User, *HttpError) {
 	}
 
 	// check email unique
-
 	for _, user := range users {
 		if user.Email == email && user.Id != id {
 			return User{}, &HttpError{Message: "Email already exists in database", Code: http.StatusBadRequest}
